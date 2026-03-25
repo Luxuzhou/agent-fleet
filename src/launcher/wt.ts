@@ -9,48 +9,48 @@ interface PaneConfig {
   title: string;
 }
 
-function sanitize(s: string): string {
-  // Remove all shell-special chars from titles
-  return s.replace(/[^a-zA-Z0-9 _-]/g, '');
+function safeTitle(s: string): string {
+  // Only alphanumeric and underscore — no spaces, no dashes, no special chars
+  return s.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-function paneArg(pane: PaneConfig): string {
-  // Build: cmd /k claude -p "prompt text here"
-  const [cli, ...rest] = pane.command;
-  const parts = [cli, ...rest.map(a => `"${a}"`)];
-  return `cmd /k ${parts.join(' ')}`;
+function buildCmd(pane: PaneConfig): string {
+  // cmd /k <cli> <flag> "<prompt>"
+  // Only the prompt (last arg) needs quoting, flags like -p -q stay bare
+  const [cli, ...args] = pane.command;
+  const parts = args.map(a => {
+    if (a.startsWith('-')) return a; // flags: bare
+    return `"${a}"`; // prompt text: quoted
+  });
+  return `cmd /k ${cli} ${parts.join(' ')}`;
 }
 
 export function launchWt(panes: PaneConfig[]): void {
   if (panes.length === 0) return;
 
-  // Build the full wt.exe command as a single line in a .bat file
-  // This avoids all Node spawn/exec argument parsing issues
   const segments: string[] = [];
 
-  segments.push(`new-tab --title "${sanitize(panes[0].title)}" -- ${paneArg(panes[0])}`);
+  segments.push(`new-tab --title ${safeTitle(panes[0].title)} -- ${buildCmd(panes[0])}`);
 
   if (panes.length >= 2) {
-    segments.push(`split-pane -V --title "${sanitize(panes[1].title)}" -- ${paneArg(panes[1])}`);
+    segments.push(`split-pane -V --title ${safeTitle(panes[1].title)} -- ${buildCmd(panes[1])}`);
   }
   if (panes.length >= 3) {
     segments.push('move-focus left');
-    segments.push(`split-pane -H --title "${sanitize(panes[2].title)}" -- ${paneArg(panes[2])}`);
+    segments.push(`split-pane -H --title ${safeTitle(panes[2].title)} -- ${buildCmd(panes[2])}`);
   }
   if (panes.length >= 4) {
     segments.push('move-focus right');
-    segments.push(`split-pane -H --title "${sanitize(panes[3].title)}" -- ${paneArg(panes[3])}`);
+    segments.push(`split-pane -H --title ${safeTitle(panes[3].title)} -- ${buildCmd(panes[3])}`);
   }
   segments.push('move-focus first');
 
-  const wtCmd = `wt -w fleet ${segments.join(' ; ')}`;
+  const wtLine = `wt -w fleet ${segments.join(' ; ')}`;
 
-  // Write to temp .bat file and execute
-  const batPath = join(tmpdir(), `agent-fleet-launch-${Date.now()}.bat`);
-  writeFileSync(batPath, `@echo off\n${wtCmd}\n`, 'utf-8');
+  const batPath = join(tmpdir(), `fleet-${Date.now()}.bat`);
+  writeFileSync(batPath, `@echo off\r\n${wtLine}\r\n`, 'utf-8');
 
   exec(`"${batPath}"`, (err) => {
-    // Clean up bat file after a delay
     setTimeout(() => { try { unlinkSync(batPath); } catch {} }, 5000);
     if (err) console.error(`[fleet] Launch error: ${err.message}`);
   });
