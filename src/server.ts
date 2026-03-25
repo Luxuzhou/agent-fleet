@@ -175,8 +175,15 @@ export async function createFleetServer(options: ServerOptions) {
   });
 
   // Start server
-  const httpServer: HttpServer = await new Promise((resolve) => {
+  const httpServer: HttpServer = await new Promise((resolve, reject) => {
     const s = app.listen(options.port, () => resolve(s));
+    s.on('error', (err: NodeJS.ErrnoException) => {
+      if (err.code === 'EADDRINUSE') {
+        reject(new Error(`Port ${options.port} is already in use. Kill the existing process or change the port in fleet.yaml.`));
+      } else {
+        reject(err);
+      }
+    });
   });
 
   const actualPort = (httpServer.address() as { port: number }).port;
