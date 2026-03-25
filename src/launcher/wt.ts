@@ -10,38 +10,36 @@ interface PaneConfig {
 }
 
 function safeTitle(s: string): string {
-  // Only alphanumeric and underscore — no spaces, no dashes, no special chars
   return s.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-function buildCmd(pane: PaneConfig): string {
-  // cmd /k <cli> <flag> "<prompt>"
-  // Only the prompt (last arg) needs quoting, flags like -p -q stay bare
+function buildCmd(pane: PaneConfig, cwd: string): string {
   const [cli, ...args] = pane.command;
   const parts = args.map(a => {
-    if (a.startsWith('-')) return a; // flags: bare
-    return `"${a}"`; // prompt text: quoted
+    if (a.startsWith('-')) return a;
+    return `"${a}"`;
   });
-  return `cmd /k ${cli} ${parts.join(' ')}`;
+  // cd to project dir first, then run CLI
+  return `cmd /k cd /d "${cwd}" && ${cli} ${parts.join(' ')}`;
 }
 
-export function launchWt(panes: PaneConfig[]): void {
+export function launchWt(panes: PaneConfig[], cwd: string): void {
   if (panes.length === 0) return;
 
   const segments: string[] = [];
 
-  segments.push(`new-tab --title ${safeTitle(panes[0].title)} -- ${buildCmd(panes[0])}`);
+  segments.push(`new-tab --title ${safeTitle(panes[0].title)} -- ${buildCmd(panes[0], cwd)}`);
 
   if (panes.length >= 2) {
-    segments.push(`split-pane -V --title ${safeTitle(panes[1].title)} -- ${buildCmd(panes[1])}`);
+    segments.push(`split-pane -V --title ${safeTitle(panes[1].title)} -- ${buildCmd(panes[1], cwd)}`);
   }
   if (panes.length >= 3) {
     segments.push('move-focus left');
-    segments.push(`split-pane -H --title ${safeTitle(panes[2].title)} -- ${buildCmd(panes[2])}`);
+    segments.push(`split-pane -H --title ${safeTitle(panes[2].title)} -- ${buildCmd(panes[2], cwd)}`);
   }
   if (panes.length >= 4) {
     segments.push('move-focus right');
-    segments.push(`split-pane -H --title ${safeTitle(panes[3].title)} -- ${buildCmd(panes[3])}`);
+    segments.push(`split-pane -H --title ${safeTitle(panes[3].title)} -- ${buildCmd(panes[3], cwd)}`);
   }
   segments.push('move-focus first');
 

@@ -6,7 +6,7 @@ interface PaneConfig {
   title: string;
 }
 
-export function launchFallback(panes: PaneConfig[]): void {
+export function launchFallback(panes: PaneConfig[], _cwd?: string): void {
   for (const pane of panes) {
     const cmd = pane.command.join(' ');
 

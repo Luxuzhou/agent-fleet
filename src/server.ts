@@ -105,12 +105,16 @@ export async function createFleetServer(options: ServerOptions) {
     }
 
     // Determine role from client info
+    // CLIs don't send metadata.role, so detect by name:
+    // 'claude' or 'claude-code' → orchestrator, everything else → worker
     let role: AgentRole = 'worker';
     let agentName = 'unknown';
     const ci = req.body?.params?.clientInfo as any;
     if (ci) {
-      role = ci.metadata?.role === 'orchestrator' ? 'orchestrator' : 'worker';
       agentName = ci.metadata?.agent ?? ci.name ?? 'unknown';
+      const isOrchestrator = ci.metadata?.role === 'orchestrator'
+        || agentName.toLowerCase().includes('claude');
+      role = isOrchestrator ? 'orchestrator' : 'worker';
     }
 
     // Create transport

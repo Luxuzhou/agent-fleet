@@ -6,7 +6,7 @@ interface PaneConfig {
   title: string;
 }
 
-export function launchTmux(panes: PaneConfig[]): void {
+export function launchTmux(panes: PaneConfig[], _cwd?: string): void {
   if (panes.length === 0) return;
 
   const sessionName = 'fleet';

@@ -83,9 +83,9 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
   console.log(`✓ Launching ${panes.length}-pane layout via ${terminalType}...`);
 
   switch (terminalType) {
-    case 'wt': launchWt(panes); break;
-    case 'tmux': launchTmux(panes); break;
-    default: launchFallback(panes); break;
+    case 'wt': launchWt(panes, projectDir); break;
+    case 'tmux': launchTmux(panes, projectDir); break;
+    default: launchFallback(panes, projectDir); break;
   }
 
   console.log('✓ All panes launched. Fleet is ready.');

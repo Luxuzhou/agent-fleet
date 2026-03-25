@@ -43,11 +43,11 @@ describe('Adapters', () => {
   });
 
   describe('CodexAdapter', () => {
-    it('builds launch command with -q flag', () => {
+    it('builds launch command with prompt', () => {
       const adapter = new CodexAdapter();
       const cmd = adapter.buildLaunchCommand('Implement feature');
       expect(cmd[0]).toBe('codex');
-      expect(cmd).toContain('-q');
+      expect(cmd).toContain('Implement feature');
     });
   });
 });

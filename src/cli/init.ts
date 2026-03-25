@@ -18,7 +18,8 @@ export async function runInit(projectDir: string): Promise<void> {
   ];
 
   const detectedAgents: Record<string, AgentConfig> = {};
-  const serverUrl = 'http://localhost:4600/mcp';
+  // Use 127.0.0.1 instead of localhost to bypass system HTTP proxies
+  const serverUrl = 'http://127.0.0.1:4600/mcp';
 
   // Phase 1: Detect CLIs
   console.log('Detecting installed CLIs...');

@@ -37,6 +37,6 @@ export class CodexAdapter implements FleetAdapter {
   }
 
   buildLaunchCommand(prompt: string): string[] {
-    return ['codex', '-q', prompt];
+    return ['codex', prompt];
   }
 }
