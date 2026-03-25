@@ -177,7 +177,7 @@ async function pollAndPush(): Promise<void> {
     for (const task of tasks) {
       const prevState = lastTaskStates.get(task.id);
 
-      if (prevState && prevState !== task.status) {
+      if (prevState !== task.status) {
         // State changed — push Channel notification
         let message = '';
         if (task.status === 'completed') {
@@ -192,6 +192,7 @@ async function pollAndPush(): Promise<void> {
         }
 
         if (message) {
+          process.stderr.write(`[channel-bridge] Pushing: ${message.slice(0, 100)}\n`);
           await server.notification({
             method: 'notifications/claude/channel',
             params: { content: message },
@@ -201,8 +202,8 @@ async function pollAndPush(): Promise<void> {
 
       lastTaskStates.set(task.id, task.status);
     }
-  } catch {
-    // Fleet server might not be ready yet
+  } catch (err: any) {
+    process.stderr.write(`[channel-bridge] Poll error: ${err.message}\n`);
   }
 }
 

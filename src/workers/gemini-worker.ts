@@ -39,7 +39,8 @@ export class GeminiWorker extends EventEmitter {
         reject(new Error('Gemini task timeout (5 min)'));
       }, 300000);
 
-      const args = ['-p', fullPrompt, '-o', 'stream-json', '-y'];
+      // Quote prompt for shell: true — otherwise spaces split it into positional args
+      const args = ['-p', `"${fullPrompt.replace(/"/g, '\\"')}"`, '-o', 'stream-json', '-y'];
 
       // Only load fleet-related MCP servers for speed
       if (this.allowedMcpServers.length > 0) {
