@@ -7,19 +7,20 @@ import type { AgentRegistry } from '../core/agent-registry.js';
 export interface WorkerDeps {
   taskQueue: TaskQueue;
   contextBuilder: ContextBuilder;
-  sessionId: string;
+  sessionId: string | (() => string | undefined);
   agentRegistry: AgentRegistry;
 }
 
 export function registerWorkerTools(server: McpServer, deps: WorkerDeps): void {
-  const { taskQueue, contextBuilder, sessionId, agentRegistry } = deps;
+  const { taskQueue, contextBuilder, agentRegistry } = deps;
+  const getSessionId = typeof deps.sessionId === 'function' ? deps.sessionId : () => deps.sessionId as string;
 
   server.tool(
     'fleet_poll',
     'Check for pending tasks assigned to you. Call this when you start and after completing each task.',
     {},
     async () => {
-      const agent = agentRegistry.getBySession(sessionId);
+      const agent = agentRegistry.getBySession(getSessionId() ?? '');
       if (!agent) {
         return { content: [{ type: 'text' as const, text: JSON.stringify({ task: null, error: 'Agent not registered' }) }], isError: true };
       }

@@ -45,7 +45,7 @@ export async function createFleetServer(options: ServerOptions) {
 
   const agentTimeouts: Record<string, number> = {};
 
-  function createMcpServerForSession(sessionId: string, role: AgentRole, agentName?: string): McpServer {
+  function createMcpServerForSession(sessionIdGetter: () => string | undefined, role: AgentRole, agentName?: string): McpServer {
     const server = new McpServer({
       name: 'agent-fleet',
       version: '0.1.0',
@@ -54,7 +54,7 @@ export async function createFleetServer(options: ServerOptions) {
     if (role === 'orchestrator') {
       registerOrchestratorTools(server, { taskQueue, agentRegistry, contextBuilder, agentTimeouts });
     } else {
-      registerWorkerTools(server, { taskQueue, contextBuilder, sessionId, agentRegistry });
+      registerWorkerTools(server, { taskQueue, contextBuilder, sessionId: sessionIdGetter, agentRegistry });
     }
 
     // Register MCP prompts for workers
@@ -116,6 +116,7 @@ export async function createFleetServer(options: ServerOptions) {
     // Create transport
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
+      enableJsonResponse: true,
       onsessioninitialized: (newSessionId: string) => {
         sessions.set(newSessionId, transport);
         agentRegistry.register({
@@ -137,7 +138,7 @@ export async function createFleetServer(options: ServerOptions) {
     };
 
     // Create role-specific MCP server and connect
-    const mcpServer = createMcpServerForSession(transport.sessionId ?? '', role, agentName);
+    const mcpServer = createMcpServerForSession(() => transport.sessionId, role, agentName);
     await mcpServer.connect(transport);
     await transport.handleRequest(req, res, req.body);
   });
