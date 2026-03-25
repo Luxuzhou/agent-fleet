@@ -3,7 +3,8 @@
     "allow": [
       "mcp__agent-fleet__fleet_agents",
       "mcp__agent-fleet__fleet_delegate",
-      "mcp__agent-fleet__fleet_result"
+      "mcp__agent-fleet__fleet_result",
+      "mcp__agent-fleet__fleet_status"
     ]
   }
 }
