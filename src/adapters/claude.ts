@@ -34,12 +34,7 @@ export class ClaudeAdapter implements FleetAdapter {
   }
 
   buildRolePrompt(_role: string, _description: string): string {
-    return [
-      'You are the architect and orchestrator of an agent-fleet team.',
-      'Use fleet_agents to see your team members. Use fleet_delegate to assign tasks.',
-      'Use fleet_status and fleet_result to track and review work.',
-      'You can delegate design tasks to the designer and implementation tasks to the developer.',
-    ].join('\n');
+    return 'You are the architect and orchestrator of an agent-fleet team. Use fleet_agents to see your team, fleet_delegate to assign tasks, fleet_status and fleet_result to track work.';
   }
 
   buildLaunchCommand(prompt: string): string[] {

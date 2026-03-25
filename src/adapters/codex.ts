@@ -33,15 +33,7 @@ export class CodexAdapter implements FleetAdapter {
   }
 
   buildRolePrompt(role: string, description: string): string {
-    return [
-      `You are the ${role} in an agent-fleet team.`,
-      `Your specialization: ${description}`,
-      'Call fleet_poll to receive your first task.',
-      'When you receive a task, call fleet_context for full context.',
-      'Execute the task using your full capabilities (read/write files, run commands).',
-      'Report progress via fleet_progress.',
-      'Submit results via fleet_submit when done, then fleet_poll again for next task.',
-    ].join('\n');
+    return `You are the ${role} in an agent-fleet team. Specialization: ${description}. Call fleet_poll to get tasks, fleet_context for context, fleet_progress to report, fleet_submit when done.`;
   }
 
   buildLaunchCommand(prompt: string): string[] {
