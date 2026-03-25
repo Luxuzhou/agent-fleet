@@ -15,11 +15,9 @@ async function main() {
 
     case 'start': {
       const serverOnly = args.includes('--server-only');
-      const layoutIdx = args.indexOf('--layout');
-      const layout = layoutIdx >= 0 ? args[layoutIdx + 1] : undefined;
       const termIdx = args.indexOf('--terminal');
       const terminal = termIdx >= 0 ? args[termIdx + 1] as any : undefined;
-      await runStart(projectDir, { serverOnly, layout, terminal });
+      await runStart(projectDir, { serverOnly, terminal });
       break;
     }
 
@@ -42,7 +40,6 @@ Usage:
   agent-fleet init              Detect CLIs, generate fleet.yaml, configure MCP
   agent-fleet start             Start server and launch all agents in split panes
   agent-fleet start --server-only  Start server only (manual CLI management)
-  agent-fleet start --layout triple  Use triple layout (no sub-agent pane)
   agent-fleet start --terminal wt|tmux  Force specific terminal multiplexer
   agent-fleet add <name> --role <role>  Add a new agent to fleet.yaml
       `);

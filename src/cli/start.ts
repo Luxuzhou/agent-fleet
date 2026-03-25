@@ -6,15 +6,10 @@ import { detectTerminal, type TerminalType } from '../launcher/detect.js';
 import { launchWt } from '../launcher/wt.js';
 import { launchTmux } from '../launcher/tmux.js';
 import { launchFallback } from '../launcher/fallback.js';
-import { ClaudeAdapter } from '../adapters/claude.js';
-import { GeminiAdapter } from '../adapters/gemini.js';
-import { CodexAdapter } from '../adapters/codex.js';
 import type { FleetConfig } from '../types.js';
-import type { FleetAdapter } from '../adapters/base.js';
 
 interface StartOptions {
   serverOnly?: boolean;
-  layout?: string;
   terminal?: TerminalType;
 }
 
@@ -42,40 +37,19 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
     return;
   }
 
-  const adapterMap: Record<string, FleetAdapter> = {
-    claude: new ClaudeAdapter(),
-    gemini: new GeminiAdapter(),
-    codex: new CodexAdapter(),
-  };
+  // Build panes: left=Claude, top-right=Gemini, bottom-right=Codex
+  // No prompt injection — CLIs launch bare, fleet tools auto-available via MCP config
+  const panes = [
+    { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
+  ];
 
-  const paneMapping = config.layout?.panes ?? {
-    'top-left': 'claude',
-    'top-right': 'claude',
-    'bottom-left': 'codex',
-    'bottom-right': 'gemini',
-  };
-
-  const paneOrder = ['top-left', 'top-right', 'bottom-left', 'bottom-right'];
-  const panes = [];
-
-  for (const position of paneOrder) {
-    const agentName = paneMapping[position];
-    if (!agentName) continue;
-
-    const adapter = adapterMap[agentName];
-    if (!adapter) continue;
-
-    const agentConfig = config.agents[agentName];
-    const isOrchestrator = agentName === 'claude' && position === 'top-left';
-
-    const prompt = isOrchestrator
-      ? adapter.buildRolePrompt('orchestrator', 'Architecture and team orchestration')
-      : adapter.buildRolePrompt(agentConfig?.role ?? agentName, agentConfig?.description ?? '');
-
+  // Add configured worker agents
+  const agentNames = Object.keys(config.agents);
+  for (const name of agentNames) {
     panes.push({
-      name: agentName,
-      command: adapter.buildLaunchCommand(prompt),
-      title: `${agentName} - ${isOrchestrator ? 'Architect' : agentConfig?.role ?? agentName}`,
+      name,
+      command: [config.agents[name].cli],
+      title: `${name}_${config.agents[name].role}`,
     });
   }
 
@@ -89,6 +63,7 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
   }
 
   console.log('✓ All panes launched. Fleet is ready.');
+  console.log('  Press Ctrl+C to stop the server.');
 
   process.on('SIGINT', async () => {
     console.log('\nShutting down fleet...');

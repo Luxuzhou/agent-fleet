@@ -14,31 +14,32 @@ function safeTitle(s: string): string {
 }
 
 function buildCmd(pane: PaneConfig): string {
-  const [cli, ...args] = pane.command;
-  const parts = args.map(a => a.startsWith('-') ? a : `"${a}"`);
-  return `cmd /k ${cli} ${parts.join(' ')}`;
+  // Bare CLI name — no quotes needed, cmd /k resolves .cmd from PATH
+  return `cmd /k ${pane.command.join(' ')}`;
 }
 
 export function launchWt(panes: PaneConfig[], cwd: string): void {
   if (panes.length === 0) return;
 
-  // Use wt's -d flag for working directory — avoids && which breaks bat parsing
-  const d = `-d "${cwd}"`;
+  // Layout: left=pane[0], top-right=pane[1], bottom-right=pane[2]
+  // pane[0] (Claude) takes left half
+  // pane[1] (Gemini) splits right from Claude
+  // pane[2] (Codex) splits below Gemini
   const segments: string[] = [];
 
-  segments.push(`new-tab ${d} --title ${safeTitle(panes[0].title)} -- ${buildCmd(panes[0])}`);
+  segments.push(`new-tab -d "${cwd}" --title ${safeTitle(panes[0].title)} -- ${buildCmd(panes[0])}`);
 
   if (panes.length >= 2) {
-    segments.push(`split-pane -V ${d} --title ${safeTitle(panes[1].title)} -- ${buildCmd(panes[1])}`);
+    segments.push(`split-pane -V -d "${cwd}" --title ${safeTitle(panes[1].title)} -- ${buildCmd(panes[1])}`);
   }
   if (panes.length >= 3) {
-    segments.push('move-focus left');
-    segments.push(`split-pane -H ${d} --title ${safeTitle(panes[2].title)} -- ${buildCmd(panes[2])}`);
+    segments.push(`split-pane -H -d "${cwd}" --title ${safeTitle(panes[2].title)} -- ${buildCmd(panes[2])}`);
   }
-  if (panes.length >= 4) {
-    segments.push('move-focus right');
-    segments.push(`split-pane -H ${d} --title ${safeTitle(panes[3].title)} -- ${buildCmd(panes[3])}`);
+  // Any additional panes split below the last
+  for (let i = 3; i < panes.length; i++) {
+    segments.push(`split-pane -H -d "${cwd}" --title ${safeTitle(panes[i].title)} -- ${buildCmd(panes[i])}`);
   }
+
   segments.push('move-focus first');
 
   const wtLine = `wt -w fleet ${segments.join(' ; ')}`;
