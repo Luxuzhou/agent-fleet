@@ -23,7 +23,7 @@ export class ClaudeAdapter implements FleetAdapter {
 
   async configure(serverUrl: string, _role: string): Promise<void> {
     try {
-      await execFileAsync('claude', ['mcp', 'add', 'agent-fleet', '--transport', 'http', '--url', serverUrl]);
+      await execFileAsync('claude', ['mcp', 'add', '--transport', 'http', '-s', 'user', 'agent-fleet', serverUrl]);
     } catch (e: any) {
       throw new Error(`Failed to configure Claude: ${e.message}`);
     }
