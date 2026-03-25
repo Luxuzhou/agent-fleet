@@ -1,9 +1,13 @@
 import { readFile, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { homedir } from 'node:os';
 import type { FleetAdapter } from './base.js';
 import { which } from './base.js';
 import type { DetectResult } from '../types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export class GeminiAdapter implements FleetAdapter {
   name = 'gemini';
@@ -24,15 +28,19 @@ export class GeminiAdapter implements FleetAdapter {
     }
   }
 
-  async configure(serverUrl: string, _role: string): Promise<void> {
+  async configure(_serverUrl: string, _role: string): Promise<void> {
+    // Use stdio bridge instead of HTTP URL to bypass system proxies
+    const bridgePath = join(__dirname, '..', 'stdio-bridge.js');
+
     let settings: any = {};
     try {
       settings = JSON.parse(await readFile(this.settingsPath, 'utf-8'));
     } catch { /* file doesn't exist yet */ }
     if (!settings.mcpServers) settings.mcpServers = {};
     settings.mcpServers['agent-fleet'] = {
-      url: serverUrl,
-      headers: { 'X-Fleet-Role': 'worker', 'X-Fleet-Agent': 'gemini' },
+      command: 'node',
+      args: [bridgePath],
+      env: { FLEET_URL: _serverUrl },
     };
     await writeFile(this.settingsPath, JSON.stringify(settings, null, 2));
   }
