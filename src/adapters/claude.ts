@@ -1,10 +1,6 @@
-import { execFile } from 'node:child_process';
-import { promisify } from 'node:util';
 import type { FleetAdapter } from './base.js';
-import { which } from './base.js';
+import { which, execAsync } from './base.js';
 import type { DetectResult } from '../types.js';
-
-const execFileAsync = promisify(execFile);
 
 export class ClaudeAdapter implements FleetAdapter {
   name = 'claude';
@@ -14,7 +10,7 @@ export class ClaudeAdapter implements FleetAdapter {
     const path = await which('claude');
     if (!path) return { installed: false, authenticated: false };
     try {
-      const { stdout } = await execFileAsync('claude', ['--version']);
+      const { stdout } = await execAsync('claude --version');
       return { installed: true, authenticated: true, version: stdout.trim() };
     } catch {
       return { installed: true, authenticated: false };
@@ -23,7 +19,9 @@ export class ClaudeAdapter implements FleetAdapter {
 
   async configure(serverUrl: string, _role: string): Promise<void> {
     try {
-      await execFileAsync('claude', ['mcp', 'add', '--transport', 'http', '-s', 'user', 'agent-fleet', serverUrl]);
+      // Remove first to make idempotent
+      await execAsync('claude mcp remove -s user agent-fleet').catch(() => {});
+      await execAsync(`claude mcp add --transport http -s user agent-fleet ${serverUrl}`);
     } catch (e: any) {
       throw new Error(`Failed to configure Claude: ${e.message}`);
     }
@@ -31,7 +29,7 @@ export class ClaudeAdapter implements FleetAdapter {
 
   async unconfigure(): Promise<void> {
     try {
-      await execFileAsync('claude', ['mcp', 'remove', 'agent-fleet']);
+      await execAsync('claude mcp remove agent-fleet');
     } catch { /* ignore if not configured */ }
   }
 

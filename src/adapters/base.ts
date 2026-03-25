@@ -1,8 +1,8 @@
-import { execFile } from 'node:child_process';
+import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
 import type { DetectResult } from '../types.js';
 
-const execFileAsync = promisify(execFile);
+export const execAsync = promisify(exec);
 
 export interface FleetAdapter {
   name: string;
@@ -16,8 +16,8 @@ export interface FleetAdapter {
 
 export async function which(command: string): Promise<string | null> {
   try {
-    const cmd = process.platform === 'win32' ? 'where' : 'which';
-    const { stdout } = await execFileAsync(cmd, [command]);
+    const cmd = process.platform === 'win32' ? `where ${command}` : `which ${command}`;
+    const { stdout } = await execAsync(cmd);
     return stdout.trim().split('\n')[0] || null;
   } catch {
     return null;
