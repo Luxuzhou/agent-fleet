@@ -13,38 +13,35 @@ function safeTitle(s: string): string {
   return s.replace(/[^a-zA-Z0-9_]/g, '_');
 }
 
-function buildCmd(pane: PaneConfig, cwd: string): string {
+function buildCmd(pane: PaneConfig): string {
   const [cli, ...args] = pane.command;
-  const parts = args.map(a => {
-    if (a.startsWith('-')) return a;
-    return `"${a}"`;
-  });
-  // cd to project dir first, then run CLI
-  return `cmd /k cd /d "${cwd}" && ${cli} ${parts.join(' ')}`;
+  const parts = args.map(a => a.startsWith('-') ? a : `"${a}"`);
+  return `cmd /k ${cli} ${parts.join(' ')}`;
 }
 
 export function launchWt(panes: PaneConfig[], cwd: string): void {
   if (panes.length === 0) return;
 
+  // Use wt's -d flag for working directory — avoids && which breaks bat parsing
+  const d = `-d "${cwd}"`;
   const segments: string[] = [];
 
-  segments.push(`new-tab --title ${safeTitle(panes[0].title)} -- ${buildCmd(panes[0], cwd)}`);
+  segments.push(`new-tab ${d} --title ${safeTitle(panes[0].title)} -- ${buildCmd(panes[0])}`);
 
   if (panes.length >= 2) {
-    segments.push(`split-pane -V --title ${safeTitle(panes[1].title)} -- ${buildCmd(panes[1], cwd)}`);
+    segments.push(`split-pane -V ${d} --title ${safeTitle(panes[1].title)} -- ${buildCmd(panes[1])}`);
   }
   if (panes.length >= 3) {
     segments.push('move-focus left');
-    segments.push(`split-pane -H --title ${safeTitle(panes[2].title)} -- ${buildCmd(panes[2], cwd)}`);
+    segments.push(`split-pane -H ${d} --title ${safeTitle(panes[2].title)} -- ${buildCmd(panes[2])}`);
   }
   if (panes.length >= 4) {
     segments.push('move-focus right');
-    segments.push(`split-pane -H --title ${safeTitle(panes[3].title)} -- ${buildCmd(panes[3], cwd)}`);
+    segments.push(`split-pane -H ${d} --title ${safeTitle(panes[3].title)} -- ${buildCmd(panes[3])}`);
   }
   segments.push('move-focus first');
 
   const wtLine = `wt -w fleet ${segments.join(' ; ')}`;
-
   const batPath = join(tmpdir(), `fleet-${Date.now()}.bat`);
   writeFileSync(batPath, `@echo off\r\n${wtLine}\r\n`, 'utf-8');
 
