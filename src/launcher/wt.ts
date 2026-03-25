@@ -1,4 +1,4 @@
-import { exec } from 'node:child_process';
+import { spawn } from 'node:child_process';
 
 interface PaneConfig {
   name: string;
@@ -6,46 +6,36 @@ interface PaneConfig {
   title: string;
 }
 
-function safeTitle(s: string): string {
-  // Remove characters that cmd.exe interprets: () & | < > ^
-  return s.replace(/[()&|<>^]/g, '');
-}
-
-function buildPaneCommand(pane: PaneConfig): string {
-  // Wrap in cmd /k so .cmd files on PATH are resolved
-  const inner = pane.command.map((arg, i) => {
-    if (i === 0) return arg; // CLI name bare
-    // Wrap args in quotes, escape inner quotes
-    return `"${arg.replace(/"/g, "'")}"`;
-  }).join(' ');
-  return `cmd /k ${inner}`;
-}
-
 export function launchWt(panes: PaneConfig[]): void {
   if (panes.length === 0) return;
 
-  // Build wt.exe command — each sub-command separated by ;
-  // wt.exe parses ; as its own delimiter, not cmd.exe
-  const parts: string[] = [];
+  // spawn passes args directly to wt.exe — no cmd.exe interpretation
+  // wt.exe recognizes `;` as sub-command separator when it's a standalone arg
+  // Each pane uses `cmd /k <cli> <args>` so .cmd files on PATH are resolved
+  const args: string[] = ['-w', 'fleet'];
 
-  parts.push(`new-tab --title "${safeTitle(panes[0].title)}" -- ${buildPaneCommand(panes[0])}`);
+  // Pane 0: top-left (new tab)
+  args.push('new-tab', '--title', panes[0].title, '--', 'cmd', '/k', ...panes[0].command);
 
+  // Pane 1: top-right (split vertical from pane 0)
   if (panes.length >= 2) {
-    parts.push(`split-pane -V --title "${safeTitle(panes[1].title)}" -- ${buildPaneCommand(panes[1])}`);
+    args.push(';', 'split-pane', '-V', '--title', panes[1].title, '--', 'cmd', '/k', ...panes[1].command);
   }
-  if (panes.length >= 3) {
-    parts.push('move-focus left');
-    parts.push(`split-pane -H --title "${safeTitle(panes[2].title)}" -- ${buildPaneCommand(panes[2])}`);
-  }
-  if (panes.length >= 4) {
-    parts.push('move-focus right');
-    parts.push(`split-pane -H --title "${safeTitle(panes[3].title)}" -- ${buildPaneCommand(panes[3])}`);
-  }
-  parts.push('move-focus first');
 
-  const cmd = `wt.exe -w fleet ${parts.join(' ; ')}`;
-  console.log(`[fleet] Launching: ${cmd.slice(0, 120)}...`);
-  exec(cmd, (err) => {
-    if (err) console.error(`[fleet] wt.exe error: ${err.message}`);
-  });
+  // Pane 2: bottom-left (split horizontal from pane 0)
+  if (panes.length >= 3) {
+    args.push(';', 'move-focus', 'left');
+    args.push(';', 'split-pane', '-H', '--title', panes[2].title, '--', 'cmd', '/k', ...panes[2].command);
+  }
+
+  // Pane 3: bottom-right (split horizontal from pane 1)
+  if (panes.length >= 4) {
+    args.push(';', 'move-focus', 'right');
+    args.push(';', 'split-pane', '-H', '--title', panes[3].title, '--', 'cmd', '/k', ...panes[3].command);
+  }
+
+  // Focus back to orchestrator
+  args.push(';', 'move-focus', 'first');
+
+  spawn('wt.exe', args, { detached: true, stdio: 'ignore' }).unref();
 }
