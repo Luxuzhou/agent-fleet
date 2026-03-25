@@ -72,6 +72,10 @@ export async function createFleetServer(options: ServerOptions) {
   let workerManager: WorkerManager | null = null;
 
   if (options.enableWorkers) {
+    // Pre-register workers in AgentRegistry so fleet_delegate finds them
+    agentRegistry.register({ name: 'gemini', role: 'worker', workerRole: 'designer', sessionId: 'worker-gemini' });
+    agentRegistry.register({ name: 'codex', role: 'worker', workerRole: 'developer', sessionId: 'worker-codex' });
+
     workerManager = new WorkerManager({
       cwd: options.projectDir ?? process.cwd(),
       onProgress: (taskId, agent, message) => {
