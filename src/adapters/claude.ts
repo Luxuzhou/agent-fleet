@@ -1,6 +1,11 @@
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import type { FleetAdapter } from './base.js';
 import { which, execAsync } from './base.js';
 import type { DetectResult } from '../types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 export class ClaudeAdapter implements FleetAdapter {
   name = 'claude';
@@ -19,9 +24,10 @@ export class ClaudeAdapter implements FleetAdapter {
 
   async configure(serverUrl: string, _role: string): Promise<void> {
     try {
-      // Remove first to make idempotent
+      // Use stdio channel-bridge instead of HTTP — enables Claude Code Channel push
+      const bridgePath = join(__dirname, '..', 'channel-bridge.js');
       await execAsync('claude mcp remove -s user agent-fleet').catch(() => {});
-      await execAsync(`claude mcp add --transport http -s user agent-fleet ${serverUrl}`);
+      await execAsync(`claude mcp add -s user agent-fleet -e FLEET_URL=${serverUrl} -- node "${bridgePath}"`);
     } catch (e: any) {
       throw new Error(`Failed to configure Claude: ${e.message}`);
     }
