@@ -49,47 +49,41 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
     return;
   }
 
-  // Launch Claude in its own terminal (workers run headless via WorkerManager)
-  if (enableWorkers) {
-    // v2: only Claude needs a TUI — workers are headless
-    const panes = [
-      { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
-    ];
+  // Write live log file for worker output
+  const logPath = resolve(projectDir, '.fleet-workers.log');
+  const { writeFileSync, appendFileSync } = await import('node:fs');
+  writeFileSync(logPath, `[fleet] Worker log started at ${new Date().toISOString()}\n`);
 
-    const terminalType = options.terminal ?? detectTerminal();
-    console.log(`✓ Launching Claude via ${terminalType}...`);
-
-    switch (terminalType) {
-      case 'wt': launchWt(panes, projectDir); break;
-      case 'tmux': launchTmux(panes, projectDir); break;
-      default: launchFallback(panes, projectDir); break;
-    }
-
-    console.log('✓ Fleet ready. Claude is the orchestrator.');
-    console.log('  Codex and Gemini run headless — tasks auto-dispatched.');
-  } else {
-    // v1 mode: all CLIs get TUI panes
-    const panes = [
-      { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
-    ];
-    for (const name of Object.keys(config.agents)) {
-      panes.push({
-        name,
-        command: [config.agents[name].cli],
-        title: `${name}_${config.agents[name].role}`,
-      });
-    }
-
-    const terminalType = options.terminal ?? detectTerminal();
-    console.log(`✓ Launching ${panes.length}-pane layout via ${terminalType}...`);
-
-    switch (terminalType) {
-      case 'wt': launchWt(panes, projectDir); break;
-      case 'tmux': launchTmux(panes, projectDir); break;
-      default: launchFallback(panes, projectDir); break;
-    }
-    console.log('✓ All panes launched. Fleet is ready.');
+  // Redirect worker manager logs to file
+  if (server.workerManager) {
+    const origLog = console.log;
+    const origOnLog = server.workerManager['opts'].onLog;
+    server.workerManager['opts'].onLog = (msg: string) => {
+      origOnLog(msg);
+      try { appendFileSync(logPath, msg + '\n'); } catch {}
+    };
   }
+
+  // Build panes: left=Claude, top-right=Gemini log, bottom-right=Codex log
+  const panes = [
+    { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
+    { name: 'gemini-log', command: ['powershell', '-Command', `Get-Content -Path "${logPath}" -Wait | Select-String "gemini|Gemini|fleet"`], title: 'Gemini_Worker' },
+    { name: 'codex-log', command: ['powershell', '-Command', `Get-Content -Path "${logPath}" -Wait | Select-String "codex|Codex|fleet"`], title: 'Codex_Worker' },
+  ];
+
+  const terminalType = options.terminal ?? detectTerminal();
+  console.log(`✓ Launching ${panes.length}-pane layout via ${terminalType}...`);
+
+  switch (terminalType) {
+    case 'wt': launchWt(panes, projectDir); break;
+    case 'tmux': launchTmux(panes, projectDir); break;
+    default: launchFallback(panes, projectDir); break;
+  }
+
+  console.log('✓ Fleet ready:');
+  console.log('  Left:  Claude (orchestrator — use fleet_delegate to assign tasks)');
+  console.log('  Right: Live worker logs (Gemini top, Codex bottom)');
+  console.log('  Workers execute automatically — no manual input needed.');
 
   console.log('  Press Ctrl+C to stop the server.');
 
