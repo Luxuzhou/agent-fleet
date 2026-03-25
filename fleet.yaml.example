@@ -1,0 +1,27 @@
+version: 1
+server:
+  port: 4600
+  heartbeat_interval: 15
+
+agents:
+  gemini:
+    role: designer
+    cli: gemini
+    prompt_flag: "-p"
+    description: "UI/UX design, component styling, responsive layout"
+    timeout: 300
+
+  codex:
+    role: developer
+    cli: codex
+    prompt_flag: "-q"
+    description: "Code implementation, testing, debugging"
+    timeout: 600
+
+layout:
+  style: quad
+  panes:
+    top-left: claude
+    top-right: claude
+    bottom-left: codex
+    bottom-right: gemini
