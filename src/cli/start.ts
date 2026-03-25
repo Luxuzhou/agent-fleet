@@ -75,7 +75,7 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
     panes.push({
       name: agentName,
       command: adapter.buildLaunchCommand(prompt),
-      title: `${agentName} (${isOrchestrator ? 'Architect' : agentConfig?.role ?? agentName})`,
+      title: `${agentName} - ${isOrchestrator ? 'Architect' : agentConfig?.role ?? agentName}`,
     });
   }
 
