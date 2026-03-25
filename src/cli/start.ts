@@ -49,26 +49,15 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
     return;
   }
 
-  // Write live log file for worker output
-  const logPath = resolve(projectDir, '.fleet-workers.log');
-  const { writeFileSync, appendFileSync } = await import('node:fs');
-  writeFileSync(logPath, `[fleet] Worker log started at ${new Date().toISOString()}\n`);
+  // Worker log files are written by WorkerManager (.fleet-gemini.log, .fleet-codex.log)
+  // Log panes use powershell Get-Content -Wait to tail them
+  const geminiLog = resolve(projectDir, '.fleet-gemini.log');
+  const codexLog = resolve(projectDir, '.fleet-codex.log');
 
-  // Redirect worker manager logs to file
-  if (server.workerManager) {
-    const origLog = console.log;
-    const origOnLog = server.workerManager['opts'].onLog;
-    server.workerManager['opts'].onLog = (msg: string) => {
-      origOnLog(msg);
-      try { appendFileSync(logPath, msg + '\n'); } catch {}
-    };
-  }
-
-  // Build panes: left=Claude, top-right=Gemini log, bottom-right=Codex log
   const panes = [
     { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
-    { name: 'gemini-log', command: ['powershell', '-Command', `Get-Content -Path "${logPath}" -Wait | Select-String "gemini|Gemini|fleet"`], title: 'Gemini_Worker' },
-    { name: 'codex-log', command: ['powershell', '-Command', `Get-Content -Path "${logPath}" -Wait | Select-String "codex|Codex|fleet"`], title: 'Codex_Worker' },
+    { name: 'gemini-log', command: ['powershell', `Get-Content "${geminiLog}" -Wait -Tail 50`], title: 'Gemini_Worker' },
+    { name: 'codex-log', command: ['powershell', `Get-Content "${codexLog}" -Wait -Tail 50`], title: 'Codex_Worker' },
   ];
 
   const terminalType = options.terminal ?? detectTerminal();

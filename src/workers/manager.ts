@@ -4,6 +4,8 @@
  * worker and streams results back via callback.
  */
 import { EventEmitter } from 'node:events';
+import { appendFileSync, writeFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { CodexWorker } from './codex-worker.js';
 import { GeminiWorker } from './gemini-worker.js';
 import type { FleetTask } from '../types.js';
@@ -23,24 +25,43 @@ export class WorkerManager extends EventEmitter {
   private opts: WorkerManagerOptions;
   private taskQueue: Map<string, FleetTask> = new Map();
 
+  private geminiLogPath: string;
+  private codexLogPath: string;
+
   constructor(opts: WorkerManagerOptions) {
     super();
     this.opts = opts;
     this.codex = new CodexWorker({ port: opts.codexPort ?? 4500, cwd: opts.cwd });
     this.gemini = new GeminiWorker({ cwd: opts.cwd, allowedMcpServers: [] });
 
-    // Wire up worker events
+    // Per-worker log files for TUI panes
+    this.geminiLogPath = resolve(opts.cwd, '.fleet-gemini.log');
+    this.codexLogPath = resolve(opts.cwd, '.fleet-codex.log');
+    writeFileSync(this.geminiLogPath, `[gemini] Worker started ${new Date().toISOString()}\n`);
+    writeFileSync(this.codexLogPath, `[codex] Worker started ${new Date().toISOString()}\n`);
+
+    // Wire up worker events → log files + callbacks
     this.codex.on('progress', (msg: string) => {
+      this.logCodex(`Progress: ${msg}`);
       const task = this.getRunningTask('codex');
       if (task) this.opts.onProgress(task.id, 'codex', msg);
     });
-    this.codex.on('log', (msg: string) => this.opts.onLog(msg));
+    this.codex.on('log', (msg: string) => { this.logCodex(msg); this.opts.onLog(msg); });
 
     this.gemini.on('progress', (msg: string) => {
+      this.logGemini(`Progress: ${msg}`);
       const task = this.getRunningTask('gemini');
       if (task) this.opts.onProgress(task.id, 'gemini', msg);
     });
-    this.gemini.on('log', (msg: string) => this.opts.onLog(msg));
+    this.gemini.on('log', (msg: string) => { this.logGemini(msg); this.opts.onLog(msg); });
+  }
+
+  private logGemini(msg: string): void {
+    try { appendFileSync(this.geminiLogPath, `${new Date().toLocaleTimeString()} ${msg}\n`); } catch {}
+  }
+
+  private logCodex(msg: string): void {
+    try { appendFileSync(this.codexLogPath, `${new Date().toLocaleTimeString()} ${msg}\n`); } catch {}
   }
 
   async start(): Promise<void> {
@@ -62,10 +83,12 @@ export class WorkerManager extends EventEmitter {
 
     this.opts.onLog(`[fleet] Dispatching task ${task.id} to ${agentName}: ${task.description.slice(0, 80)}`);
 
-    // Route to appropriate worker
+    // Route to appropriate worker + log
     if (agentName.includes('codex')) {
+      this.logCodex(`Task ${task.id}: ${task.description}`);
       this.executeCodex(task, context);
     } else if (agentName.includes('gemini')) {
+      this.logGemini(`Task ${task.id}: ${task.description}`);
       this.executeGemini(task, context);
     } else {
       this.opts.onFailed(task.id, agentName, `Unknown worker: ${agentName}`);

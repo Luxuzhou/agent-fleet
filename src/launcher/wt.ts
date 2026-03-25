@@ -14,7 +14,11 @@ function safeTitle(s: string): string {
 }
 
 function buildCmd(pane: PaneConfig): string {
-  // Bare CLI name — no quotes needed, cmd /k resolves .cmd from PATH
+  const [cli] = pane.command;
+  // powershell runs directly, other CLIs need cmd /k for .cmd resolution
+  if (cli === 'powershell') {
+    return pane.command.join(' ');
+  }
   return `cmd /k ${pane.command.join(' ')}`;
 }
 
