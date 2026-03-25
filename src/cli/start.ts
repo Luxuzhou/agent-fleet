@@ -11,6 +11,7 @@ import type { FleetConfig } from '../types.js';
 interface StartOptions {
   serverOnly?: boolean;
   terminal?: TerminalType;
+  auto?: boolean; // v2: auto-dispatch mode (no worker TUI panes needed)
 }
 
 export async function runStart(projectDir: string, options: StartOptions): Promise<void> {
@@ -24,45 +25,72 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
     process.exit(1);
   }
 
+  // v2 auto mode: enable worker manager for direct dispatch
+  const enableWorkers = options.auto ?? true;
+
   const server = await createFleetServer({
     port: config.server.port,
     heartbeatInterval: config.server.heartbeat_interval,
     projectDir,
+    enableWorkers,
   });
 
   console.log(`✓ MCP server listening on http://localhost:${server.port}`);
 
+  if (enableWorkers) {
+    const status = server.workerManager?.getStatus();
+    console.log(`✓ Workers: Codex ${status?.codex ? '✓' : '✗'} | Gemini ${status?.gemini ? '✓' : '✗'}`);
+    console.log('✓ Auto-dispatch mode: tasks delegated by Claude will execute automatically');
+  }
+
   if (options.serverOnly) {
-    console.log('Server-only mode. Connect CLIs manually.');
+    console.log('Server ready. Claude connects via channel-bridge MCP.');
+    console.log('Press Ctrl+C to stop.');
     return;
   }
 
-  // Build panes: left=Claude, top-right=Gemini, bottom-right=Codex
-  // No prompt injection — CLIs launch bare, fleet tools auto-available via MCP config
-  const panes = [
-    { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
-  ];
+  // Launch Claude in its own terminal (workers run headless via WorkerManager)
+  if (enableWorkers) {
+    // v2: only Claude needs a TUI — workers are headless
+    const panes = [
+      { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
+    ];
 
-  // Add configured worker agents
-  const agentNames = Object.keys(config.agents);
-  for (const name of agentNames) {
-    panes.push({
-      name,
-      command: [config.agents[name].cli],
-      title: `${name}_${config.agents[name].role}`,
-    });
+    const terminalType = options.terminal ?? detectTerminal();
+    console.log(`✓ Launching Claude via ${terminalType}...`);
+
+    switch (terminalType) {
+      case 'wt': launchWt(panes, projectDir); break;
+      case 'tmux': launchTmux(panes, projectDir); break;
+      default: launchFallback(panes, projectDir); break;
+    }
+
+    console.log('✓ Fleet ready. Claude is the orchestrator.');
+    console.log('  Codex and Gemini run headless — tasks auto-dispatched.');
+  } else {
+    // v1 mode: all CLIs get TUI panes
+    const panes = [
+      { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
+    ];
+    for (const name of Object.keys(config.agents)) {
+      panes.push({
+        name,
+        command: [config.agents[name].cli],
+        title: `${name}_${config.agents[name].role}`,
+      });
+    }
+
+    const terminalType = options.terminal ?? detectTerminal();
+    console.log(`✓ Launching ${panes.length}-pane layout via ${terminalType}...`);
+
+    switch (terminalType) {
+      case 'wt': launchWt(panes, projectDir); break;
+      case 'tmux': launchTmux(panes, projectDir); break;
+      default: launchFallback(panes, projectDir); break;
+    }
+    console.log('✓ All panes launched. Fleet is ready.');
   }
 
-  const terminalType = options.terminal ?? detectTerminal();
-  console.log(`✓ Launching ${panes.length}-pane layout via ${terminalType}...`);
-
-  switch (terminalType) {
-    case 'wt': launchWt(panes, projectDir); break;
-    case 'tmux': launchTmux(panes, projectDir); break;
-    default: launchFallback(panes, projectDir); break;
-  }
-
-  console.log('✓ All panes launched. Fleet is ready.');
   console.log('  Press Ctrl+C to stop the server.');
 
   process.on('SIGINT', async () => {

@@ -9,12 +9,14 @@ import { AgentRegistry } from './core/agent-registry.js';
 import { ContextBuilder } from './core/context-builder.js';
 import { registerOrchestratorTools } from './tools/orchestrator.js';
 import { registerWorkerTools } from './tools/worker.js';
+import { WorkerManager } from './workers/manager.js';
 import type { AgentRole } from './types.js';
 
 interface ServerOptions {
   port: number;
   heartbeatInterval?: number;
   projectDir?: string;
+  enableWorkers?: boolean;
 }
 
 export async function createFleetServer(options: ServerOptions) {
@@ -65,17 +67,52 @@ export async function createFleetServer(options: ServerOptions) {
     console.log(`[fleet] Channel → orchestrator: ${message}`);
   }
 
-  // === Wire task events to Channel push ===
+  // === Worker Manager (v2): auto-dispatch tasks to Codex/Gemini ===
+
+  let workerManager: WorkerManager | null = null;
+
+  if (options.enableWorkers) {
+    workerManager = new WorkerManager({
+      cwd: options.projectDir ?? process.cwd(),
+      onProgress: (taskId, agent, message) => {
+        taskQueue.get(taskId) && taskQueue.updateProgress(taskId, message);
+      },
+      onCompleted: (taskId, agent, result) => {
+        const task = taskQueue.get(taskId);
+        if (task && task.status === 'running') {
+          taskQueue.complete(taskId, { result, filesChanged: [] });
+        }
+      },
+      onFailed: (taskId, agent, error) => {
+        const task = taskQueue.get(taskId);
+        if (task && task.status !== 'completed') {
+          taskQueue.fail(taskId, error);
+        }
+      },
+      onLog: (msg) => console.log(msg),
+    });
+  }
+
+  // === Wire task events to Channel push + auto-dispatch ===
 
   taskQueue.on('created', (taskId: string) => {
     const task = taskQueue.get(taskId);
     if (!task) return;
-    // Push to assigned worker: new task available
-    pushToWorker(task.agent, 'notifications/fleet/task_assigned', {
-      taskId,
-      description: task.description,
-    });
-    console.log(`[fleet] Push → ${task.agent}: task ${taskId} assigned`);
+
+    // V2: auto-dispatch to worker if WorkerManager is active
+    if (workerManager) {
+      taskQueue.start(taskId);
+      const context = task.upstream ? Object.values(task.upstream).join('\n\n') : undefined;
+      workerManager.dispatch(task, context);
+      console.log(`[fleet] Auto-dispatched ${taskId} to ${task.agent}`);
+    } else {
+      // V1 fallback: push notification to worker for manual poll
+      pushToWorker(task.agent, 'notifications/fleet/task_assigned', {
+        taskId,
+        description: task.description,
+      });
+      console.log(`[fleet] Push → ${task.agent}: task ${taskId} assigned`);
+    }
   });
 
   taskQueue.on('completed', (taskId: string) => {
@@ -257,12 +294,19 @@ export async function createFleetServer(options: ServerOptions) {
 
   const actualPort = (httpServer.address() as { port: number }).port;
 
+  // Start worker manager if enabled
+  if (workerManager) {
+    await workerManager.start();
+  }
+
   return {
     port: actualPort,
     httpServer,
     taskQueue,
     agentRegistry,
+    workerManager,
     async close() {
+      if (workerManager) await workerManager.stop();
       taskQueue.dispose();
       agentRegistry.dispose();
       for (const transport of sessions.values()) {
