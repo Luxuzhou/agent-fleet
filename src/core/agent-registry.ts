@@ -20,7 +20,8 @@ export class AgentRegistry extends EventEmitter {
   constructor(heartbeatIntervalSec: number) {
     super();
     this.heartbeatTimeout = heartbeatIntervalSec * 3 * 1000;
-    this.heartbeatChecker = setInterval(() => this.checkHeartbeats(), heartbeatIntervalSec * 1000);
+    // Disabled: MCP clients don't send heartbeats, rely on transport.onclose instead
+    this.heartbeatChecker = null;
   }
 
   register(input: RegisterInput): void {

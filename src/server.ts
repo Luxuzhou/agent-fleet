@@ -117,6 +117,8 @@ export async function createFleetServer(options: ServerOptions) {
       role = isOrchestrator ? 'orchestrator' : 'worker';
     }
 
+    console.log(`[fleet] New connection: agent=${agentName}, role=${role}, clientInfo=${JSON.stringify(ci?.name)}`);
+
     // Create transport
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
@@ -129,6 +131,7 @@ export async function createFleetServer(options: ServerOptions) {
           workerRole: role === 'worker' ? agentName : undefined,
           sessionId: newSessionId,
         });
+        console.log(`[fleet] Session initialized: agent=${agentName}, session=${newSessionId}`);
       },
     });
 

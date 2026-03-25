@@ -20,7 +20,7 @@ export class CodexAdapter implements FleetAdapter {
   async configure(serverUrl: string, _role: string): Promise<void> {
     try {
       await execAsync('codex mcp remove agent-fleet').catch(() => {});
-      await execAsync(`codex mcp add agent-fleet -- curl ${serverUrl}`);
+      await execAsync(`codex mcp add agent-fleet --url ${serverUrl}`);
     } catch (e: any) {
       throw new Error(`Failed to configure Codex: ${e.message}`);
     }
