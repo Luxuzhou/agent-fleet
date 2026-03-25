@@ -46,8 +46,36 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
         upstream: params.upstream,
       });
 
+      // Block until task completes or fails (like native agent team sub-agents)
+      const result = await new Promise<string>((resolve) => {
+        const checkDone = () => {
+          const t = taskQueue.get(task.id);
+          if (!t) { resolve(JSON.stringify({ error: 'Task disappeared' })); return; }
+          if (t.status === 'completed') {
+            resolve(JSON.stringify({
+              task_id: t.id,
+              agent: t.agent,
+              status: 'completed',
+              result: t.result?.result,
+              files_changed: t.result?.filesChanged,
+            }));
+          } else if (t.status === 'failed' || t.status === 'cancelled') {
+            resolve(JSON.stringify({
+              task_id: t.id,
+              agent: t.agent,
+              status: t.status,
+              error: t.progress,
+            }));
+          } else {
+            // Still running — check again in 1s
+            setTimeout(checkDone, 1000);
+          }
+        };
+        checkDone();
+      });
+
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({ task_id: task.id }) }],
+        content: [{ type: 'text' as const, text: result }],
       };
     }
   );
