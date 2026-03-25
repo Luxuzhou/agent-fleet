@@ -107,7 +107,7 @@ export async function createFleetServer(options: ServerOptions) {
     // Determine role from client info
     let role: AgentRole = 'worker';
     let agentName = 'unknown';
-    const ci = req.body?.params?.clientInfo;
+    const ci = req.body?.params?.clientInfo as any;
     if (ci) {
       role = ci.metadata?.role === 'orchestrator' ? 'orchestrator' : 'worker';
       agentName = ci.metadata?.agent ?? ci.name ?? 'unknown';

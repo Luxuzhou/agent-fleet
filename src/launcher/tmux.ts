@@ -27,5 +27,5 @@ export function launchTmux(panes: PaneConfig[]): void {
     execFileSync('tmux', ['split-window', '-v', '-t', sessionName, ...panes[3].command]);
   }
   execFileSync('tmux', ['select-pane', '-t', `${sessionName}:0.0`]);
-  execFile('tmux', ['attach', '-t', sessionName], { stdio: 'inherit' });
+  execFile('tmux', ['attach', '-t', sessionName], { stdio: 'inherit' } as any);
 }
