@@ -44,7 +44,7 @@ export function launchWt(panes: PaneConfig[], cwd: string): void {
 
   const wtLine = `wt -w fleet ${segments.join(' ; ')}`;
   const batPath = join(tmpdir(), `fleet-${Date.now()}.bat`);
-  writeFileSync(batPath, `@echo off\r\n${wtLine}\r\n`, 'utf-8');
+  writeFileSync(batPath, `@echo off\r\nchcp 65001 >nul\r\n${wtLine}\r\n`, 'utf-8');
 
   exec(`"${batPath}"`, (err) => {
     setTimeout(() => { try { unlinkSync(batPath); } catch {} }, 5000);
