@@ -31,7 +31,7 @@ export class WorkerManager extends EventEmitter {
   constructor(opts: WorkerManagerOptions) {
     super();
     this.opts = opts;
-    this.codex = new CodexWorker({ port: opts.codexPort ?? 4500, cwd: opts.cwd });
+    this.codex = new CodexWorker({ cwd: opts.cwd });
     this.gemini = new GeminiWorker({ cwd: opts.cwd, allowedMcpServers: [] });
 
     // Per-worker log files for TUI panes

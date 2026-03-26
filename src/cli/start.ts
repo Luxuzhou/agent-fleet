@@ -49,13 +49,11 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
     return;
   }
 
-  // Panes: Claude interactive, Gemini interactive, Codex live log (app-server is headless)
-  const codexLog = resolve(projectDir, '.fleet-codex.log');
-
+  // All three CLIs open as interactive windows
   const panes = [
     { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
     { name: 'gemini', command: ['gemini'], title: 'Gemini_Designer' },
-    { name: 'codex-log', command: ['powershell', `Get-Content "${codexLog}" -Wait -Tail 50`], title: 'Codex_Developer' },
+    { name: 'codex', command: ['codex'], title: 'Codex_Developer' },
   ];
 
   const terminalType = options.terminal ?? detectTerminal();
@@ -68,8 +66,9 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
   }
 
   console.log('✓ Fleet ready:');
-  console.log('  Left:  Claude — just tell it what you want to build');
-  console.log('  Right: Gemini (interactive) + Codex (auto-dispatch)');
+  console.log('  Left:  Claude (architect) — tell it what to build');
+  console.log('  Right: Gemini (designer) + Codex (developer)');
+  console.log('  All three are interactive — auto-dispatch runs in background.');
 
   console.log('  Press Ctrl+C to stop the server.');
 
