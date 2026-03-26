@@ -1,6 +1,6 @@
 /**
  * Codex Worker — connects to codex app-server via WebSocket.
- * Injects tasks as user messages, streams responses back.
+ * Protocol: initialize → thread/start → turn/start(input) → stream deltas → turn/completed
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import { EventEmitter } from 'node:events';
@@ -17,7 +17,6 @@ export class CodexWorker extends EventEmitter {
   private port: number;
   private cwd: string;
   private threadId: string | null = null;
-  private currentResponse = '';
   private ready = false;
 
   constructor(options: CodexWorkerOptions = {}) {
@@ -27,8 +26,9 @@ export class CodexWorker extends EventEmitter {
   }
 
   async start(): Promise<void> {
-    // Start codex app-server
     const wsUrl = `ws://127.0.0.1:${this.port}`;
+
+    // Start codex app-server
     this.appServer = spawn('codex', ['app-server', '--listen', wsUrl], {
       cwd: this.cwd,
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -43,23 +43,31 @@ export class CodexWorker extends EventEmitter {
     // Wait for server to be ready
     await this.waitForServer(wsUrl);
 
-    // Connect WebSocket
+    // Connect and initialize
     this.ws = new WebSocket(wsUrl);
 
     await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('WebSocket connection timeout')), 10000);
+      const timeout = setTimeout(() => reject(new Error('WebSocket connect timeout')), 10000);
       this.ws!.on('open', () => {
         clearTimeout(timeout);
-        this.setupMessageHandler();
-        this.ready = true;
-        this.emit('ready');
         resolve();
       });
-      this.ws!.on('error', (err) => {
-        clearTimeout(timeout);
-        reject(err);
-      });
+      this.ws!.on('error', (err) => { clearTimeout(timeout); reject(err); });
     });
+
+    // Step 1: Initialize
+    const initResult = await this.rpcCall('initialize', {
+      clientInfo: { name: 'agent-fleet', version: '0.1.0' },
+    });
+    this.emit('log', `[codex] Initialized: ${initResult?.userAgent ?? 'ok'}`);
+
+    // Step 2: Create thread
+    const threadResult = await this.rpcCall('thread/start', {});
+    this.threadId = threadResult?.thread?.id;
+    this.emit('log', `[codex] Thread: ${this.threadId}`);
+
+    this.ready = true;
+    this.emit('ready');
   }
 
   private async waitForServer(wsUrl: string): Promise<void> {
@@ -79,93 +87,88 @@ export class CodexWorker extends EventEmitter {
     throw new Error('Codex app-server failed to start within 30s');
   }
 
-  private setupMessageHandler(): void {
-    this.ws!.on('message', (data: Buffer) => {
-      try {
-        const msg = JSON.parse(data.toString());
-        this.handleMessage(msg);
-      } catch {
-        // ignore non-JSON
-      }
+  private rpcId = 0;
+
+  private rpcCall(method: string, params: Record<string, unknown>): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const id = ++this.rpcId;
+      const timeout = setTimeout(() => reject(new Error(`RPC timeout: ${method}`)), 15000);
+
+      const handler = (data: Buffer) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg.id === id) {
+            clearTimeout(timeout);
+            this.ws!.removeListener('message', handler);
+            if (msg.error) reject(new Error(msg.error.message));
+            else resolve(msg.result);
+          }
+        } catch {}
+      };
+
+      this.ws!.on('message', handler);
+      this.ws!.send(JSON.stringify({ jsonrpc: '2.0', method, id, params }));
     });
   }
 
-  private handleMessage(msg: any): void {
-    const method = msg.method;
-
-    if (method === 'thread/started' || method === 'thread/created') {
-      this.threadId = msg.params?.thread?.id ?? msg.params?.id;
-      this.emit('log', `[codex] Thread: ${this.threadId}`);
-    }
-
-    if (method === 'turn/started') {
-      this.currentResponse = '';
-      this.emit('progress', 'Codex is working...');
-    }
-
-    if (method === 'item/agentMessage/delta') {
-      const delta = msg.params?.delta?.text ?? msg.params?.delta ?? '';
-      this.currentResponse += delta;
-      // Emit progress every ~200 chars
-      if (this.currentResponse.length % 200 < delta.length) {
-        this.emit('progress', this.currentResponse.slice(-200));
-      }
-    }
-
-    if (method === 'turn/completed') {
-      this.emit('completed', this.currentResponse);
-      this.currentResponse = '';
-    }
-
-    if (method === 'item/completed' && msg.params?.item?.type === 'agentMessage') {
-      // Individual message completed (may have multiple in a turn)
-    }
-  }
-
   async executeTask(task: string, context?: string): Promise<string> {
-    if (!this.ready || !this.ws) {
+    if (!this.ready || !this.ws || !this.threadId) {
       throw new Error('Codex worker not ready');
     }
 
+    const fullPrompt = context ? `Context:\n${context}\n\nTask: ${task}` : task;
+
+    // Start a turn
+    const turnResult = await this.rpcCall('turn/start', {
+      threadId: this.threadId,
+      input: [{ type: 'text', text: fullPrompt }],
+    });
+    const turnId = turnResult?.turn?.id;
+
+    // Stream response — collect agentMessage deltas until turn/completed
     return new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Codex task timeout (10 min)')), 600000);
+      const timeout = setTimeout(() => {
+        this.ws!.removeListener('message', handler);
+        reject(new Error('Codex task timeout (10 min)'));
+      }, 600000);
 
-      const fullPrompt = context ? `${context}\n\n${task}` : task;
+      let response = '';
 
-      // Listen for completion
-      const onCompleted = (result: string) => {
-        clearTimeout(timeout);
-        this.removeListener('completed', onCompleted);
-        resolve(result);
+      const handler = (data: Buffer) => {
+        try {
+          const msg = JSON.parse(data.toString());
+
+          if (msg.method === 'item/agentMessage/delta') {
+            const delta = msg.params?.delta ?? '';
+            response += delta;
+            // Emit progress periodically
+            if (response.length % 100 < delta.length) {
+              this.emit('progress', response.slice(-150));
+            }
+          }
+
+          if (msg.method === 'turn/completed') {
+            clearTimeout(timeout);
+            this.ws!.removeListener('message', handler);
+            this.emit('log', `[codex] Turn completed: ${response.length} chars`);
+            resolve(response || '(no output)');
+          }
+
+          if (msg.method === 'error') {
+            this.emit('log', `[codex] Error: ${msg.params?.error?.message}`);
+          }
+        } catch {}
       };
-      this.on('completed', onCompleted);
 
-      // Send turn/start with the task
-      this.ws!.send(JSON.stringify({
-        jsonrpc: '2.0',
-        method: 'turn/start',
-        id: Date.now(),
-        params: {
-          thread_id: this.threadId,
-          message: fullPrompt,
-        },
-      }));
+      this.ws!.on('message', handler);
     });
   }
 
   async stop(): Promise<void> {
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
-    }
-    if (this.appServer) {
-      this.appServer.kill();
-      this.appServer = null;
-    }
+    if (this.ws) { this.ws.close(); this.ws = null; }
+    if (this.appServer) { this.appServer.kill(); this.appServer = null; }
     this.ready = false;
   }
 
-  isReady(): boolean {
-    return this.ready;
-  }
+  isReady(): boolean { return this.ready; }
 }
