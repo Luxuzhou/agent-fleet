@@ -49,15 +49,13 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
     return;
   }
 
-  // Worker log files are written by WorkerManager (.fleet-gemini.log, .fleet-codex.log)
-  // Log panes use powershell Get-Content -Wait to tail them
-  const geminiLog = resolve(projectDir, '.fleet-gemini.log');
+  // Panes: Claude interactive, Gemini interactive, Codex live log (app-server is headless)
   const codexLog = resolve(projectDir, '.fleet-codex.log');
 
   const panes = [
     { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
-    { name: 'gemini-log', command: ['powershell', `Get-Content "${geminiLog}" -Wait -Tail 50`], title: 'Gemini_Worker' },
-    { name: 'codex-log', command: ['powershell', `Get-Content "${codexLog}" -Wait -Tail 50`], title: 'Codex_Worker' },
+    { name: 'gemini', command: ['gemini'], title: 'Gemini_Designer' },
+    { name: 'codex-log', command: ['powershell', `Get-Content "${codexLog}" -Wait -Tail 50`], title: 'Codex_Developer' },
   ];
 
   const terminalType = options.terminal ?? detectTerminal();
@@ -70,9 +68,8 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
   }
 
   console.log('✓ Fleet ready:');
-  console.log('  Left:  Claude (orchestrator — use fleet_delegate to assign tasks)');
-  console.log('  Right: Live worker logs (Gemini top, Codex bottom)');
-  console.log('  Workers execute automatically — no manual input needed.');
+  console.log('  Left:  Claude — just tell it what you want to build');
+  console.log('  Right: Gemini (interactive) + Codex (auto-dispatch)');
 
   console.log('  Press Ctrl+C to stop the server.');
 

@@ -46,26 +46,18 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
         upstream: params.upstream,
       });
 
-      // Block until task completes or fails (like native agent team sub-agents)
+      // Block until task completes or fails — return clean natural language
       const result = await new Promise<string>((resolve) => {
         const checkDone = () => {
           const t = taskQueue.get(task.id);
-          if (!t) { resolve(JSON.stringify({ error: 'Task disappeared' })); return; }
+          if (!t) { resolve('Error: task disappeared'); return; }
           if (t.status === 'completed') {
-            resolve(JSON.stringify({
-              task_id: t.id,
-              agent: t.agent,
-              status: 'completed',
-              result: t.result?.result,
-              files_changed: t.result?.filesChanged,
-            }));
+            const files = t.result?.filesChanged?.length
+              ? `\nFiles changed: ${t.result.filesChanged.join(', ')}`
+              : '';
+            resolve(`${t.agent} completed the task.\n\nResult:\n${t.result?.result ?? '(no output)'}${files}`);
           } else if (t.status === 'failed' || t.status === 'cancelled') {
-            resolve(JSON.stringify({
-              task_id: t.id,
-              agent: t.agent,
-              status: t.status,
-              error: t.progress,
-            }));
+            resolve(`${t.agent} failed: ${t.progress ?? 'unknown error'}`);
           } else {
             // Still running — check again in 1s
             setTimeout(checkDone, 1000);
@@ -90,18 +82,16 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
       if (params.task_id) {
         const task = taskQueue.get(params.task_id);
         if (!task) {
-          return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Task not found' }) }], isError: true };
+          return { content: [{ type: 'text' as const, text: 'Task not found.' }], isError: true };
         }
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({
-            tasks: [{ id: task.id, agent: task.agent, status: task.status, progress: task.progress }]
-          }) }],
+          content: [{ type: 'text' as const, text: `Task ${task.id} (${task.agent}): ${task.status}${task.progress ? ' — ' + task.progress : ''}` }],
         };
       }
-      const tasks = taskQueue.listAll().map(t => ({
-        id: t.id, agent: t.agent, status: t.status, progress: t.progress,
-      }));
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ tasks }) }] };
+      const tasks = taskQueue.listAll();
+      if (tasks.length === 0) return { content: [{ type: 'text' as const, text: 'No tasks yet.' }] };
+      const lines = tasks.map(t => `• ${t.id} → ${t.agent}: ${t.status}${t.progress ? ' — ' + t.progress : ''}`);
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
     }
   );
 
@@ -112,16 +102,14 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
     async (params) => {
       const task = taskQueue.get(params.task_id);
       if (!task) {
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: 'Task not found' }) }], isError: true };
+        return { content: [{ type: 'text' as const, text: 'Task not found.' }], isError: true };
       }
       if (task.status !== 'completed') {
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ error: `Task is ${task.status}, not completed` }) }], isError: true };
+        return { content: [{ type: 'text' as const, text: `Task is ${task.status}, not completed yet.` }], isError: true };
       }
+      const files = task.result?.filesChanged?.length ? `\nFiles: ${task.result.filesChanged.join(', ')}` : '';
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({
-          result: task.result?.result,
-          files_changed: task.result?.filesChanged,
-        }) }],
+        content: [{ type: 'text' as const, text: `${task.result?.result ?? '(no output)'}${files}` }],
       };
     }
   );
@@ -131,12 +119,10 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
     'List all agents and their roles.',
     {},
     async () => {
-      const agents = agentRegistry.listAll().map(a => ({
-        name: a.name,
-        role: a.workerRole ?? a.role,
-        status: a.status,
-      }));
-      return { content: [{ type: 'text' as const, text: JSON.stringify({ agents }) }] };
+      const agents = agentRegistry.listAll();
+      if (agents.length === 0) return { content: [{ type: 'text' as const, text: 'No agents connected.' }] };
+      const lines = agents.map(a => `• ${a.name} (${a.workerRole ?? a.role}) — ${a.status}`);
+      return { content: [{ type: 'text' as const, text: `Your team:\n${lines.join('\n')}` }] };
     }
   );
 
@@ -147,9 +133,9 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
     async (params) => {
       try {
         taskQueue.cancel(params.task_id);
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: true }) }] };
+        return { content: [{ type: 'text' as const, text: 'Task cancelled.' }] };
       } catch (e: any) {
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ success: false, error: e.message }) }], isError: true };
+        return { content: [{ type: 'text' as const, text: `Failed to cancel: ${e.message}` }], isError: true };
       }
     }
   );

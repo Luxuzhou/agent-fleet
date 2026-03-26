@@ -35,7 +35,6 @@ describe('E2E: Full fleet workflow', () => {
     expect(initOrch.status).toBe(200);
     const orchSession = initOrch.headers.get('mcp-session-id')!;
 
-    // Send initialized notification
     await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
       headers: { ...headers, 'mcp-session-id': orchSession },
@@ -64,8 +63,10 @@ describe('E2E: Full fleet workflow', () => {
       body: JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }),
     });
 
-    // === Step 3: Claude delegates task ===
-    const delegateRes = await fetch(`${baseUrl}/mcp`, {
+    // === Step 3: Delegate (blocking) + Worker submit in parallel ===
+    // fleet_delegate now blocks until completion, so we run delegate and worker concurrently
+
+    const delegatePromise = fetch(`${baseUrl}/mcp`, {
       method: 'POST',
       headers: { ...headers, 'mcp-session-id': orchSession },
       body: JSON.stringify({
@@ -73,11 +74,10 @@ describe('E2E: Full fleet workflow', () => {
         params: { name: 'fleet_delegate', arguments: { agent: 'gemini', task: 'Design the login page' } },
       }),
     });
-    const delegateBody = await delegateRes.json() as any;
-    const taskId = JSON.parse(delegateBody.result.content[0].text).task_id;
-    expect(taskId).toBeTruthy();
 
-    // === Step 4: Gemini polls for task ===
+    // Give delegate a moment to create the task, then worker polls and submits
+    await new Promise(r => setTimeout(r, 500));
+
     const pollRes = await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
       headers: { ...headers, 'mcp-session-id': workerSession },
@@ -88,36 +88,28 @@ describe('E2E: Full fleet workflow', () => {
     });
     const pollBody = await pollRes.json() as any;
     const polledTask = JSON.parse(pollBody.result.content[0].text).task;
-    expect(polledTask.id).toBe(taskId);
+    expect(polledTask).toBeTruthy();
     expect(polledTask.description).toBe('Design the login page');
 
-    // === Step 5: Gemini submits result ===
-    const submitRes = await fetch(`${baseUrl}/mcp`, {
+    // Worker submits result
+    await fetch(`${baseUrl}/mcp`, {
       method: 'POST',
       headers: { ...headers, 'mcp-session-id': workerSession },
       body: JSON.stringify({
         jsonrpc: '2.0', id: 3, method: 'tools/call',
         params: {
           name: 'fleet_submit',
-          arguments: { task_id: taskId, result: 'Created login.html with responsive design', files_changed: ['login.html'] },
+          arguments: { task_id: polledTask.id, result: 'Created login.html with responsive design', files_changed: ['login.html'] },
         },
       }),
     });
-    const submitBody = await submitRes.json() as any;
-    expect(JSON.parse(submitBody.result.content[0].text).acknowledged).toBe(true);
 
-    // === Step 6: Claude gets result ===
-    const resultRes = await fetch(`${baseUrl}/mcp`, {
-      method: 'POST',
-      headers: { ...headers, 'mcp-session-id': orchSession },
-      body: JSON.stringify({
-        jsonrpc: '2.0', id: 3, method: 'tools/call',
-        params: { name: 'fleet_result', arguments: { task_id: taskId } },
-      }),
-    });
-    const resultBody = await resultRes.json() as any;
-    const result = JSON.parse(resultBody.result.content[0].text);
-    expect(result.result).toBe('Created login.html with responsive design');
-    expect(result.files_changed).toContain('login.html');
-  });
+    // === Step 4: Delegate unblocks with result ===
+    const delegateRes = await delegatePromise;
+    const delegateBody = await delegateRes.json() as any;
+    const resultText = delegateBody.result.content[0].text;
+
+    expect(resultText).toContain('completed');
+    expect(resultText).toContain('login.html');
+  }, 15000); // 15s timeout for blocking delegate
 });
