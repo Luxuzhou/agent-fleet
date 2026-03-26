@@ -14,12 +14,17 @@ function safeTitle(s: string): string {
 }
 
 function buildCmd(pane: PaneConfig): string {
-  const [cli] = pane.command;
-  // powershell runs directly, other CLIs need cmd /k for .cmd resolution
+  const [cli, ...args] = pane.command;
   if (cli === 'powershell') {
     return pane.command.join(' ');
   }
-  return `cmd /k ${pane.command.join(' ')}`;
+  // Quote args with spaces, keep flags bare
+  const quotedArgs = args.map(a => {
+    if (a.startsWith('-')) return a;
+    if (a.includes(' ')) return `"${a.replace(/"/g, "'")}"`;
+    return a;
+  });
+  return `cmd /k ${cli} ${quotedArgs.join(' ')}`;
 }
 
 export function launchWt(panes: PaneConfig[], cwd: string): void {

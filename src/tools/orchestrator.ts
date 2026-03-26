@@ -46,7 +46,7 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
         upstream: params.upstream,
       });
 
-      // Block until task completes or fails — return clean natural language
+      // Block until task completes — worker CLIs auto-poll and execute in their visible panes
       const result = await new Promise<string>((resolve) => {
         const checkDone = () => {
           const t = taskQueue.get(task.id);

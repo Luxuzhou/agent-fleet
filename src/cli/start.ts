@@ -25,23 +25,13 @@ export async function runStart(projectDir: string, options: StartOptions): Promi
     process.exit(1);
   }
 
-  // v2 auto mode: enable worker manager for direct dispatch
-  const enableWorkers = options.auto ?? true;
-
   const server = await createFleetServer({
     port: config.server.port,
     heartbeatInterval: config.server.heartbeat_interval,
     projectDir,
-    enableWorkers,
   });
 
   console.log(`✓ MCP server listening on http://localhost:${server.port}`);
-
-  if (enableWorkers) {
-    const status = server.workerManager?.getStatus();
-    console.log(`✓ Workers: Codex ${status?.codex ? '✓' : '✗'} | Gemini ${status?.gemini ? '✓' : '✗'}`);
-    console.log('✓ Auto-dispatch mode: tasks delegated by Claude will execute automatically');
-  }
 
   if (options.serverOnly) {
     console.log('Server ready. Claude connects via channel-bridge MCP.');
@@ -79,11 +69,14 @@ You have a team of AI agents available via the agent-fleet MCP tools. **DO NOT u
     console.log('✓ Created CLAUDE.md with fleet instructions');
   }
 
-  // All three CLIs open as interactive windows
+  // Worker auto-poll prompt — workers start and immediately check for tasks, then loop
+  const workerPrompt = 'You are a fleet worker. Call fleet_poll now. When you get a task, execute it fully, then call fleet_submit with your result. After submitting, call fleet_poll again. Repeat forever.';
+
+  // All three CLIs open as interactive windows with auto-poll for workers
   const panes = [
     { name: 'claude', command: ['claude'], title: 'Claude_Architect' },
-    { name: 'gemini', command: ['gemini'], title: 'Gemini_Designer' },
-    { name: 'codex', command: ['codex'], title: 'Codex_Developer' },
+    { name: 'gemini', command: ['gemini', '-i', workerPrompt], title: 'Gemini_Designer' },
+    { name: 'codex', command: ['codex', workerPrompt], title: 'Codex_Developer' },
   ];
 
   const terminalType = options.terminal ?? detectTerminal();
@@ -97,8 +90,8 @@ You have a team of AI agents available via the agent-fleet MCP tools. **DO NOT u
 
   console.log('✓ Fleet ready:');
   console.log('  Left:  Claude (architect) — tell it what to build');
-  console.log('  Right: Gemini (designer) + Codex (developer)');
-  console.log('  All three are interactive — auto-dispatch runs in background.');
+  console.log('  Right: Gemini (designer) + Codex (developer) — auto-polling for tasks');
+  console.log('  All work happens visibly in the panes.');
 
   console.log('  Press Ctrl+C to stop the server.');
 
