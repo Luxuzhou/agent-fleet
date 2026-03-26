@@ -87,9 +87,14 @@ describe('E2E: Full fleet workflow', () => {
       }),
     });
     const pollBody = await pollRes.json() as any;
-    const polledTask = JSON.parse(pollBody.result.content[0].text).task;
-    expect(polledTask).toBeTruthy();
-    expect(polledTask.description).toBe('Design the login page');
+    const pollText = pollBody.result.content[0].text as string;
+    expect(pollText).toContain('New task assigned');
+    expect(pollText).toContain('Design the login page');
+
+    // Extract task ID from poll response
+    const taskIdMatch = pollText.match(/Task ID: (\S+)/);
+    const taskId = taskIdMatch?.[1];
+    expect(taskId).toBeTruthy();
 
     // Worker submits result
     await fetch(`${baseUrl}/mcp`, {
@@ -99,7 +104,7 @@ describe('E2E: Full fleet workflow', () => {
         jsonrpc: '2.0', id: 3, method: 'tools/call',
         params: {
           name: 'fleet_submit',
-          arguments: { task_id: polledTask.id, result: 'Created login.html with responsive design', files_changed: ['login.html'] },
+          arguments: { task_id: taskId, result: 'Created login.html with responsive design', files_changed: ['login.html'] },
         },
       }),
     });

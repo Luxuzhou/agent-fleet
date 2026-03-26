@@ -17,31 +17,47 @@ export function registerWorkerTools(server: McpServer, deps: WorkerDeps): void {
 
   server.tool(
     'fleet_poll',
-    'Check for pending tasks assigned to you. Call this when you start and after completing each task.',
+    'Check for pending tasks. BLOCKS up to 30s waiting for a task. Always call this again after completing a task.',
     {},
     async () => {
       const agent = agentRegistry.getBySession(getSessionId() ?? '');
       if (!agent) {
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ task: null, error: 'Agent not registered' }) }], isError: true };
+        return { content: [{ type: 'text' as const, text: 'Error: agent not registered. Reconnect and try again.' }], isError: true };
       }
 
-      const task = taskQueue.getForAgent(agent.name);
+      // Long-polling: wait up to 30 seconds for a task
+      const task = await new Promise<ReturnType<typeof taskQueue.getForAgent>>((resolve) => {
+        // Check immediately first
+        const immediate = taskQueue.getForAgent(agent.name);
+        if (immediate) { resolve(immediate); return; }
+
+        // Set up listener for new tasks
+        const timeout = setTimeout(() => {
+          taskQueue.removeListener('created', onCreated);
+          resolve(null);
+        }, 30000);
+
+        const onCreated = (taskId: string) => {
+          const t = taskQueue.get(taskId);
+          if (t && t.agent === agent.name && t.status === 'pending') {
+            clearTimeout(timeout);
+            taskQueue.removeListener('created', onCreated);
+            resolve(t);
+          }
+        };
+
+        taskQueue.on('created', onCreated);
+      });
+
       if (!task) {
-        return { content: [{ type: 'text' as const, text: JSON.stringify({ task: null }) }] };
+        return { content: [{ type: 'text' as const, text: 'No task yet. Call fleet_poll again to keep listening.' }] };
       }
 
-      // Auto-start the task when polled
+      // Auto-start the task
       taskQueue.start(task.id);
 
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify({
-          task: {
-            id: task.id,
-            description: task.description,
-            constraints: task.constraints,
-            deliverables: task.deliverables,
-          }
-        }) }],
+        content: [{ type: 'text' as const, text: `New task assigned!\n\nTask ID: ${task.id}\nDescription: ${task.description}${task.constraints ? '\nConstraints: ' + task.constraints : ''}${task.deliverables?.length ? '\nDeliverables: ' + task.deliverables.join(', ') : ''}\n\nExecute this task now. When done, call fleet_submit with task_id "${task.id}" and your result.` }],
       };
     }
   );
@@ -102,10 +118,7 @@ export function registerWorkerTools(server: McpServer, deps: WorkerDeps): void {
           filesChanged: params.files_changed,
         });
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({
-            acknowledged: true,
-            hint: 'Call fleet_poll to check for your next task.',
-          }) }],
+          content: [{ type: 'text' as const, text: 'Task submitted successfully. Now call fleet_poll immediately to wait for your next task.' }],
         };
       } catch (e: any) {
         return { content: [{ type: 'text' as const, text: JSON.stringify({ acknowledged: false, error: e.message }) }], isError: true };

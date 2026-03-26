@@ -26,10 +26,17 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
       upstream: z.record(z.string()).optional().describe('Results from prior tasks'),
     },
     async (params) => {
-      const agent = agentRegistry.get(params.agent);
+      // Fuzzy match: "codex" matches "codex-mcp-client", "gemini" matches "gemini-cli" etc.
+      let agent = agentRegistry.get(params.agent);
+      if (!agent) {
+        const allAgents = agentRegistry.listAll();
+        agent = allAgents.find(a => a.name.toLowerCase().includes(params.agent.toLowerCase()))
+             ?? allAgents.find(a => params.agent.toLowerCase().includes(a.name.toLowerCase()));
+      }
       if (!agent || agent.status !== 'connected') {
+        const available = agentRegistry.listConnected().map(a => a.name).join(', ') || 'none';
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify({ error: `Agent "${params.agent}" is not connected` }) }],
+          content: [{ type: 'text' as const, text: `Agent "${params.agent}" not connected. Available: ${available}` }],
           isError: true,
         };
       }
@@ -37,7 +44,7 @@ export function registerOrchestratorTools(server: McpServer, deps: OrchestratorD
       const timeout = deps.agentTimeouts?.[params.agent] ?? 300;
 
       const task = taskQueue.create({
-        agent: params.agent,
+        agent: agent.name, // Use actual registered name, not user-provided alias
         description: params.task,
         timeout,
         references: params.references,
